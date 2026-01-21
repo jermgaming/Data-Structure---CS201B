@@ -1,7 +1,7 @@
 // write your code here
 // write your code here
 #include<stdio.h>
-
+#include<stdlib.h>
 void bubbleSort(float arr[],int n){
 	for(int i=0;i<n;i++){
 		for(int j=0;j<n-i-1;j++){
@@ -27,7 +27,7 @@ int main(){
 		printf("Invalid number of books\n");
 		return 0;
 	}
-	float arr[n];
+	float *arr=malloc(n*sizeof(float));
 	for(int i=0;i<n;i++){
 		printf("Book %d price: ",i+1);
 		scanf("%f",&arr[i]);
