@@ -1,0 +1,77 @@
+name: Auto-generate README for C files
+
+on:
+  push:
+    paths:
+      - '**/*.c'
+
+jobs:
+  generate-readme:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Generate README files
+        run: |
+          # Get list of modified/added .c files
+          git diff --name-only --diff-filter=AM HEAD^ HEAD | grep '\.c$' | while read -r file; do
+            # Get directory and filename without extension
+            dir=$(dirname "$file")
+            filename=$(basename "$file" .c)
+            readme_path="$dir/$filename.md"
+            
+            # Check if README.md already exists
+            if [ ! -f "$readme_path" ]; then
+              echo "Creating $readme_path"
+              
+              # Create README.md with basic template
+              cat > "$readme_path" << EOF
+          # $filename
+          
+          ## Description
+          This program demonstrates [add description here].
+          
+          ## File Information
+          - **File Name:** $filename.c
+          - **Location:** $dir
+          
+          ## Purpose
+          [Add purpose and functionality description]
+          
+          ## Compilation
+          \`\`\`bash
+          gcc "$filename.c" -o $filename
+          \`\`\`
+          
+          ## Usage
+          \`\`\`bash
+          ./$filename
+          \`\`\`
+          
+          ## Notes
+          - [Add any important notes]
+          EOF
+              
+              echo "✅ Created $readme_path"
+            else
+              echo "ℹ️  $readme_path already exists, skipping"
+            fi
+          done
+      
+      - name: Commit and push if changes exist
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Check if there are any changes
+          if [ -n "$(git status --porcelain)" ]; then
+            git add "**/*.md"
+            git commit -m "Auto-generate README files for C programs [skip ci]"
+            git push
+          else
+            echo "No new README files to commit"
+          fi

@@ -1,6 +1,6 @@
 // write your code here
 #include<stdio.h>
-
+#include<stdlib.h>
 void bubbleSort(int arr[],int n){
 	for(int i=0;i<n;i++){
 		for(int j=0;j<n-i-1;j++){
@@ -25,7 +25,7 @@ int main(){
 		printf("Invalid number\n");
 		return 0;
 	}
-	int arr[n];
+	int *arr=malloc(n*sizeof(int));
 	for(int i=0;i<n;i++){
 		scanf("%d",&arr[i]);
 	}
