@@ -39,5 +39,5 @@ void main() {
 	printf("Enter a string : ");
 	scanf("%s", ch);
 	reverse(ch);
-	printf("The reverse of a given string : %s\n", ch);
+	printf("The reverse of a given string: %s\n", ch);
 }
