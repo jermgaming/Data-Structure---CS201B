@@ -1,4 +1,4 @@
-name: Auto-generate README for C files
+name: Auto-generate README for C files with AI
 
 on:
   push:
@@ -15,52 +15,189 @@ jobs:
         with:
           fetch-depth: 0
       
-      - name: Generate README files
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
         run: |
-          # Get list of modified/added .c files
-          git diff --name-only --diff-filter=AM HEAD^ HEAD | grep '\.c$' | while read -r file; do
-            # Get directory and filename without extension
-            dir=$(dirname "$file")
-            filename=$(basename "$file" .c)
-            readme_path="$dir/$filename.md"
-            
-            # Check if README.md already exists
-            if [ ! -f "$readme_path" ]; then
-              echo "Creating $readme_path"
+          pip install requests
+      
+      - name: Generate README files with AI
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          python3 << 'EOF'
+          import os
+          import json
+          import requests
+          import subprocess
+
+          def get_modified_c_files():
+              """Get list of modified/added .c files"""
+              result = subprocess.run(
+                  ['git', 'diff', '--name-only', '--diff-filter=AM', 'HEAD^', 'HEAD'],
+                  capture_output=True,
+                  text=True
+              )
+              files = [f for f in result.stdout.strip().split('\n') if f.endswith('.c')]
+              return files
+
+          def read_file_content(filepath):
+              """Read content of a file"""
+              try:
+                  with open(filepath, 'r', encoding='utf-8') as f:
+                      return f.read()
+              except Exception as e:
+                  print(f"Error reading {filepath}: {e}")
+                  return None
+
+          def generate_readme_with_groq(code_content, filename, filepath):
+              """Generate detailed README using Groq API (Free)"""
+              api_key = os.getenv('GROQ_API_KEY')
               
-              # Create README.md with basic template
-              cat > "$readme_path" << EOF
-          # $filename
-          
+              if not api_key:
+                  print("⚠️  GROQ_API_KEY not found. Using basic template.")
+                  return None
+              
+              prompt = f"""Analyze this C program and create a comprehensive, detailed README.md file.
+
+          **File:** {filename}
+          **Path:** {filepath}
+
+          **Code:**
+          ```c
+          {code_content}
+          ```
+
+          Generate a detailed README.md with the following sections:
+          1. Title (use the filename)
+          2. Overview - Brief description of what the program does
+          3. Purpose - Detailed explanation of the program's purpose
+          4. Key Features - List all important features and functionalities
+          5. Data Structures Used - Explain any data structures (linked lists, arrays, etc.)
+          6. Algorithm Explanation - Step-by-step breakdown of the main algorithm
+          7. Functions - Document each function with parameters and return values
+          8. Compilation Instructions - How to compile the program
+          9. Usage - How to run and use the program with examples
+          10. Input/Output - Describe expected inputs and outputs
+          11. Time and Space Complexity - Analyze the complexity
+          12. Edge Cases - Any edge cases handled
+          13. Limitations - Any known limitations
+          14. Example Run - Show sample execution with expected output
+
+          Format the response in proper Markdown. Be detailed and educational."""
+
+              try:
+                  response = requests.post(
+                      'https://api.groq.com/openai/v1/chat/completions',
+                      headers={
+                          'Authorization': f'Bearer {api_key}',
+                          'Content-Type': 'application/json'
+                      },
+                      json={
+                          'model': 'llama-3.3-70b-versatile',  # Free tier model
+                          'messages': [
+                              {
+                                  'role': 'system',
+                                  'content': 'You are an expert C programmer and technical writer. Create detailed, educational documentation.'
+                              },
+                              {
+                                  'role': 'user',
+                                  'content': prompt
+                              }
+                          ],
+                          'temperature': 0.7,
+                          'max_tokens': 8000
+                      },
+                      timeout=30
+                  )
+                  
+                  if response.status_code == 200:
+                      return response.json()['choices'][0]['message']['content']
+                  else:
+                      print(f"❌ Groq API error: {response.status_code} - {response.text}")
+                      return None
+                      
+              except Exception as e:
+                  print(f"❌ Error calling Groq API: {e}")
+                  return None
+
+          def create_basic_readme(filename, filepath, code_content):
+              """Fallback basic README template"""
+              return f"""# {filename}
+
           ## Description
-          This program demonstrates [add description here].
-          
-          ## File Information
-          - **File Name:** $filename.c
-          - **Location:** $dir
-          
-          ## Purpose
-          [Add purpose and functionality description]
-          
+          This C program is located at `{filepath}`.
+
+          ## Code
+          ```c
+          {code_content[:500]}...
+          ```
+
           ## Compilation
-          \`\`\`bash
-          gcc "$filename.c" -o $filename
-          \`\`\`
-          
+          ```bash
+          gcc "{filename}.c" -o {filename}
+          ```
+
           ## Usage
-          \`\`\`bash
-          ./$filename
-          \`\`\`
-          
+          ```bash
+          ./{filename}
+          ```
+
           ## Notes
-          - [Add any important notes]
-          EOF
+          - Auto-generated README (API key not configured for detailed analysis)
+          - Please add detailed documentation manually
+          """
+
+          def main():
+              modified_files = get_modified_c_files()
               
-              echo "✅ Created $readme_path"
-            else
-              echo "ℹ️  $readme_path already exists, skipping"
-            fi
-          done
+              if not modified_files:
+                  print("No .c files modified")
+                  return
+              
+              for filepath in modified_files:
+                  if not filepath:
+                      continue
+                      
+                  directory = os.path.dirname(filepath)
+                  filename = os.path.splitext(os.path.basename(filepath))[0]
+                  readme_path = os.path.join(directory, f"{filename}.md")
+                  
+                  # Check if README already exists
+                  if os.path.exists(readme_path):
+                      print(f"ℹ️  {readme_path} already exists, skipping")
+                      continue
+                  
+                  print(f"📝 Processing: {filepath}")
+                  
+                  # Read C file content
+                  code_content = read_file_content(filepath)
+                  
+                  if not code_content:
+                      print(f"⚠️  Could not read {filepath}")
+                      continue
+                  
+                  # Generate README with AI
+                  readme_content = generate_readme_with_groq(code_content, filename, filepath)
+                  
+                  # Fallback to basic template if AI fails
+                  if not readme_content:
+                      readme_content = create_basic_readme(filename, filepath, code_content)
+                  
+                  # Write README file
+                  try:
+                      with open(readme_path, 'w', encoding='utf-8') as f:
+                          f.write(readme_content)
+                      print(f"✅ Created: {readme_path}")
+                  except Exception as e:
+                      print(f"❌ Error writing {readme_path}: {e}")
+
+          if __name__ == "__main__":
+              main()
+          EOF
       
       - name: Commit and push if changes exist
         run: |
@@ -70,7 +207,7 @@ jobs:
           # Check if there are any changes
           if [ -n "$(git status --porcelain)" ]; then
             git add "**/*.md"
-            git commit -m "Auto-generate README files for C programs [skip ci]"
+            git commit -m "🤖 Auto-generate detailed README files using AI [skip ci]"
             git push
           else
             echo "No new README files to commit"
