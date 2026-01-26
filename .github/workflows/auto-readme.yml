@@ -263,12 +263,122 @@ jobs:
           - Please add detailed documentation manually
           """
 
+          def generate_commit_message(files_processed, code_summaries):
+              """Generate context-aware commit message using AI"""
+              api_key = os.getenv('GROQ_API_KEY')
+              
+              if not api_key or not code_summaries:
+                  return "📝 Auto-generate documentation for C programs [skip ci]"
+              
+              # Create summary of all files processed
+              files_summary = "\n\n".join([
+                  f"**File:** {info['filename']}\n**Path:** {info['filepath']}\n**Summary:** {info['summary']}"
+                  for info in code_summaries
+              ])
+              
+              prompt = f"""Generate a concise, specific Git commit message for auto-generated documentation.
+
+          The following C programs had their documentation generated:
+
+          {files_summary}
+
+          Create a commit message that:
+          1. Starts with an emoji (📝 for docs, 🔗 for linked lists, 🌳 for trees, 📊 for arrays, etc.)
+          2. Briefly describes what documentation was added (be specific about the topic/algorithm)
+          3. Mentions the number of files if more than one
+          4. Ends with [skip ci]
+          5. Keep it under 72 characters if possible
+
+          Examples:
+          - "🔗 Add docs for singly linked list implementation [skip ci]"
+          - "🌳 Document binary search tree operations [skip ci]"
+          - "📊 Add documentation for stack and queue programs [skip ci]"
+
+          Generate ONLY the commit message, nothing else."""
+
+              try:
+                  response = requests.post(
+                      'https://api.groq.com/openai/v1/chat/completions',
+                      headers={
+                          'Authorization': f'Bearer {api_key}',
+                          'Content-Type': 'application/json'
+                      },
+                      json={
+                          'model': 'llama-3.3-70b-versatile',
+                          'messages': [
+                              {
+                                  'role': 'system',
+                                  'content': 'You are a Git commit message expert. Generate clear, concise, specific commit messages.'
+                              },
+                              {
+                                  'role': 'user',
+                                  'content': prompt
+                              }
+                          ],
+                          'temperature': 0.5,
+                          'max_tokens': 100
+                      },
+                      timeout=15
+                  )
+                  
+                  if response.status_code == 200:
+                      commit_msg = response.json()['choices'][0]['message']['content'].strip()
+                      # Ensure [skip ci] is at the end
+                      if '[skip ci]' not in commit_msg:
+                          commit_msg += ' [skip ci]'
+                      print(f"✅ Generated commit message: {commit_msg}")
+                      return commit_msg
+                  else:
+                      print(f"⚠️  Failed to generate commit message, using default")
+                      return "📝 Auto-generate documentation for C programs [skip ci]"
+                      
+              except Exception as e:
+                  print(f"⚠️  Error generating commit message: {e}")
+                  return "📝 Auto-generate documentation for C programs [skip ci]"
+
+          def extract_code_summary(code_content):
+              """Extract a brief summary from code (first comment or main purpose)"""
+              lines = code_content.split('\n')
+              
+              # Try to find initial comments
+              summary_lines = []
+              in_comment = False
+              
+              for line in lines[:30]:  # Check first 30 lines
+                  line = line.strip()
+                  
+                  if line.startswith('/*'):
+                      in_comment = True
+                  
+                  if in_comment:
+                      clean_line = line.replace('/*', '').replace('*/', '').replace('*', '').strip()
+                      if clean_line and not clean_line.startswith('#'):
+                          summary_lines.append(clean_line)
+                  
+                  if '*/' in line:
+                      in_comment = False
+                      if summary_lines:
+                          break
+                  
+                  if line.startswith('//'):
+                      clean_line = line.replace('//', '').strip()
+                      if clean_line:
+                          summary_lines.append(clean_line)
+              
+              if summary_lines:
+                  return ' '.join(summary_lines[:3])  # First 3 lines of comments
+              
+              # Fallback: try to infer from filename or return generic
+              return "C program implementation"
+
           def main():
               modified_files = get_modified_c_files()
               
               if not modified_files:
                   print("No .c files modified")
                   return
+              
+              code_summaries = []
               
               for filepath in modified_files:
                   if not filepath:
@@ -292,6 +402,14 @@ jobs:
                       print(f"⚠️  Could not read {filepath}")
                       continue
                   
+                  # Extract summary for commit message
+                  code_summary = extract_code_summary(code_content)
+                  code_summaries.append({
+                      'filename': filename,
+                      'filepath': filepath,
+                      'summary': code_summary
+                  })
+                  
                   # Generate README with AI
                   readme_content = generate_readme_with_groq(code_content, filename, filepath)
                   
@@ -306,6 +424,14 @@ jobs:
                       print(f"✅ Created: {readme_path}")
                   except Exception as e:
                       print(f"❌ Error writing {readme_path}: {e}")
+              
+              # Generate smart commit message
+              if code_summaries:
+                  commit_message = generate_commit_message(len(modified_files), code_summaries)
+                  # Write commit message to file for the next step
+                  with open('/tmp/commit_message.txt', 'w') as f:
+                      f.write(commit_message)
+                  print(f"💬 Commit message: {commit_message}")
 
           if __name__ == "__main__":
               main()
@@ -319,8 +445,19 @@ jobs:
           # Check if there are any changes
           if [ -n "$(git status --porcelain)" ]; then
             git add "**/*.md"
-            git commit -m "🤖 Auto-generate detailed README files using AI [skip ci]"
+            
+            # Use AI-generated commit message if available
+            if [ -f /tmp/commit_message.txt ]; then
+              COMMIT_MSG=$(cat /tmp/commit_message.txt)
+              echo "Using AI-generated commit message: $COMMIT_MSG"
+              git commit -m "$COMMIT_MSG"
+            else
+              echo "Using default commit message"
+              git commit -m "📝 Auto-generate documentation [skip ci]"
+            fi
+            
             git push
+            echo "✅ Documentation committed and pushed successfully"
           else
             echo "No new README files to commit"
           fi
