@@ -54,70 +54,182 @@ jobs:
                   return None
 
           def generate_readme_with_groq(code_content, filename, filepath):
-              """Generate detailed README using Groq API (Free)"""
+              """Generate detailed README using Groq API (Free) with full code context"""
               api_key = os.getenv('GROQ_API_KEY')
               
               if not api_key:
                   print("⚠️  GROQ_API_KEY not found. Using basic template.")
                   return None
               
-              prompt = f"""Analyze this C program and create a comprehensive, detailed README.md file.
+              # First API call: Analyze the code deeply
+              analysis_prompt = f"""You are analyzing a C program for documentation purposes. Read and understand this code completely.
 
           **File:** {filename}
           **Path:** {filepath}
 
-          **Code:**
+          **COMPLETE CODE:**
           ```c
           {code_content}
           ```
 
-          Generate a detailed README.md with the following sections:
-          1. Title (use the filename)
-          2. Overview - Brief description of what the program does
-          3. Purpose - Detailed explanation of the program's purpose
-          4. Key Features - List all important features and functionalities
-          5. Data Structures Used - Explain any data structures (linked lists, arrays, etc.)
-          6. Algorithm Explanation - Step-by-step breakdown of the main algorithm
-          7. Functions - Document each function with parameters and return values
-          8. Compilation Instructions - How to compile the program
-          9. Usage - How to run and use the program with examples
-          10. Input/Output - Describe expected inputs and outputs
-          11. Time and Space Complexity - Analyze the complexity
-          12. Edge Cases - Any edge cases handled
-          13. Limitations - Any known limitations
-          14. Example Run - Show sample execution with expected output
+          Analyze this code in detail and provide:
+          1. What does this program do? (main purpose)
+          2. What data structures are implemented/used?
+          3. List all functions with their purpose, parameters, and return values
+          4. What algorithms are used?
+          5. What are the inputs and outputs?
+          6. Step-by-step walkthrough of the main logic
+          7. Time and space complexity analysis
+          8. Any edge cases or error handling
+          9. Potential issues or limitations
+          10. Example use cases
 
-          Format the response in proper Markdown. Be detailed and educational."""
+          Be extremely detailed and technical. This analysis will be used to generate documentation."""
 
               try:
-                  response = requests.post(
+                  # Get detailed code analysis
+                  print(f"🔍 Analyzing code context for {filename}...")
+                  analysis_response = requests.post(
                       'https://api.groq.com/openai/v1/chat/completions',
                       headers={
                           'Authorization': f'Bearer {api_key}',
                           'Content-Type': 'application/json'
                       },
                       json={
-                          'model': 'llama-3.3-70b-versatile',  # Free tier model
+                          'model': 'llama-3.3-70b-versatile',
                           'messages': [
                               {
                                   'role': 'system',
-                                  'content': 'You are an expert C programmer and technical writer. Create detailed, educational documentation.'
+                                  'content': 'You are an expert C programmer and code analyst. Analyze code thoroughly and provide detailed technical insights.'
                               },
                               {
                                   'role': 'user',
-                                  'content': prompt
+                                  'content': analysis_prompt
+                              }
+                          ],
+                          'temperature': 0.3,  # Lower temperature for accurate analysis
+                          'max_tokens': 4000
+                      },
+                      timeout=45
+                  )
+                  
+                  if analysis_response.status_code != 200:
+                      print(f"❌ Analysis failed: {analysis_response.status_code}")
+                      return None
+                  
+                  code_analysis = analysis_response.json()['choices'][0]['message']['content']
+                  print(f"✅ Code analysis complete")
+                  
+                  # Second API call: Generate README based on analysis
+                  readme_prompt = f"""Based on the following code analysis, create a comprehensive, well-structured README.md file.
+
+          **CODE ANALYSIS:**
+          {code_analysis}
+
+          **ORIGINAL CODE FOR REFERENCE:**
+          ```c
+          {code_content}
+          ```
+
+          Create a detailed README.md with these sections:
+
+          # {filename}
+
+          ## 📋 Overview
+          [Clear, concise description of what this program does]
+
+          ## 🎯 Purpose
+          [Detailed explanation of why this program exists and what problem it solves]
+
+          ## ✨ Key Features
+          [Bullet points of main features and capabilities]
+
+          ## 🏗️ Data Structures Used
+          [Detailed explanation of data structures - how they're defined, how they work]
+
+          ## 🔧 Implementation Details
+
+          ### Algorithm Explanation
+          [Step-by-step breakdown of the main algorithm with clear explanations]
+
+          ### Functions Documentation
+          [Document each function:]
+          - **Function Name**: `function_name(parameters)`
+            - **Purpose**: What it does
+            - **Parameters**: Explain each parameter
+            - **Returns**: What it returns
+            - **Logic**: How it works
+
+          ## 💻 Compilation & Usage
+
+          ### Compilation
+          ```bash
+          gcc "{filename}.c" -o {filename}
+          ```
+
+          ### Running the Program
+          ```bash
+          ./{filename}
+          ```
+
+          ## 📥 Input/Output
+
+          ### Input
+          [Describe what inputs the program expects]
+
+          ### Output
+          [Describe what outputs the program produces]
+
+          ## 📊 Complexity Analysis
+          - **Time Complexity**: [Analyze with explanation]
+          - **Space Complexity**: [Analyze with explanation]
+
+          ## 🧪 Example Run
+          ```
+          [Show sample execution with actual expected output]
+          ```
+
+          ## ⚠️ Edge Cases & Error Handling
+          [List edge cases the code handles or should handle]
+
+          ## 🚧 Limitations
+          [Any known limitations or constraints]
+
+          ## 📝 Notes
+          [Any additional important information]
+
+          Use the code analysis to fill in ALL details accurately. Be specific, technical, and educational. Use emojis for section headers. Make it comprehensive and professional."""
+
+                  print(f"📝 Generating README documentation...")
+                  readme_response = requests.post(
+                      'https://api.groq.com/openai/v1/chat/completions',
+                      headers={
+                          'Authorization': f'Bearer {api_key}',
+                          'Content-Type': 'application/json'
+                      },
+                      json={
+                          'model': 'llama-3.3-70b-versatile',
+                          'messages': [
+                              {
+                                  'role': 'system',
+                                  'content': 'You are an expert technical writer. Create clear, detailed, and well-structured documentation in Markdown format.'
+                              },
+                              {
+                                  'role': 'user',
+                                  'content': readme_prompt
                               }
                           ],
                           'temperature': 0.7,
                           'max_tokens': 8000
                       },
-                      timeout=30
+                      timeout=45
                   )
                   
-                  if response.status_code == 200:
-                      return response.json()['choices'][0]['message']['content']
+                  if readme_response.status_code == 200:
+                      print(f"✅ README generated successfully")
+                      return readme_response.json()['choices'][0]['message']['content']
                   else:
-                      print(f"❌ Groq API error: {response.status_code} - {response.text}")
+                      print(f"❌ README generation failed: {readme_response.status_code}")
                       return None
                       
               except Exception as e:
