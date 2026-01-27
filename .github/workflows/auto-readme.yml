@@ -268,7 +268,7 @@ jobs:
               api_key = os.getenv('GROQ_API_KEY')
               
               if not api_key or not code_summaries:
-                  return "📝 Auto-generate documentation for C programs [skip ci]"
+                  return "📝 Auto-generate documentation for C programs"
               
               # Create summary of all files processed
               files_summary = "\n\n".join([
