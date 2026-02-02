@@ -4,7 +4,7 @@ int front = -1, rear = -1;
 
 void enqueue(int x){
 	// write your code here to enqueue an element
-	if(rear+1==MAX){
+	if(rear+1==MAXI){
 		printf("Queue is overflow.\n");
 		return;
 	}
