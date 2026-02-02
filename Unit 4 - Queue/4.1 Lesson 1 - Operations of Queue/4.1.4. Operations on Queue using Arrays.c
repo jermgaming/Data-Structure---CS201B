@@ -1,5 +1,5 @@
-#define MAX 10
-int queue[MAX];
+#define MAXI 10
+int queue[MAXI];
 int front = -1, rear = -1;
 
 void enqueue(int x){

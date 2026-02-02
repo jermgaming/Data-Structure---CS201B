@@ -29,9 +29,9 @@ int main(){
 		scanf("%d",&arr[i]);
 	}
 
-	int pos=posSum(arr,n);
-	int neg=negSum(arr,n);
-	printf("%d\n",pos);
-	printf("%d\n",neg);
+	int positive=posSum(arr,n);
+	int negative=negSum(arr,n);
+	printf("%d\n",positive);
+	printf("%d\n",negative);
 	return 0;
 }
