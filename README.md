@@ -348,7 +348,7 @@ This project is open source and available for educational purposes.
 
 ---
 
-## 👨‍💻 Author
+<!-- ## 👨‍💻 Author
 
 <div align="center">
 
@@ -358,7 +358,7 @@ This project is open source and available for educational purposes.
 
 </div>
 
----
+--- -->
 
 <div align="center">
 
