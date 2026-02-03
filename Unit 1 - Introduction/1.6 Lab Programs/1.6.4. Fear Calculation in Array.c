@@ -19,10 +19,10 @@ int main(){
 			fear[i]=1;
 		}
 	}
-	int ans=1;
+	int ANS;
 	for(int i=0;i<n;i++){
-		ans=ans*fear[i];
+		ANS=ANS*fear[i];
 	}
-	printf("%d\n",ans);
+	printf("%d\n",ANS);
 	return 0;
 }
