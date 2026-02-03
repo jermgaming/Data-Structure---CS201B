@@ -1,6 +1,5 @@
 // Type Content here...
 #include<stdio.h>
-#define MOD 10^9+7
 int main(){
 	int n;
 	scanf("%d",&n);
