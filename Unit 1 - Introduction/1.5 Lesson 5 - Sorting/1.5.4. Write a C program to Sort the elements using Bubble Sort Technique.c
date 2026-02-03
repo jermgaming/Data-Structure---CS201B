@@ -29,7 +29,6 @@ void main() {
 		}
 	}
 	printf("After sorting the elements in the array are\n");
-	// Write the for loop to display array elements after sorting
 	
 	for(int i=0;i<n;i++){
 		printf("Value of a[%d] = %d\n",i,a[i]);
