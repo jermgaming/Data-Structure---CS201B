@@ -437,10 +437,13 @@ jobs:
               main()
           EOF
       
-      - name: Commit and push if changes exist
+      name: Commit and push if changes exist
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          
+          # Fetch latest changes first
+          git fetch origin main
           
           # Check if there are any changes
           if [ -n "$(git status --porcelain)" ]; then
@@ -455,8 +458,22 @@ jobs:
               echo "Using default commit message"
               git commit -m "📝 Auto-generate documentation [skip ci]"
             fi
-            git pull --rebase origin main
-            git push
+            
+            # Pull with rebase and handle conflicts
+            git pull --rebase origin main || {
+              echo "Rebase failed, trying merge strategy"
+              git rebase --abort
+              git pull origin main --no-rebase -X theirs
+            }
+            
+            # Retry push with exponential backoff
+            for i in 1 2 3; do
+              git push && break
+              echo "Push failed, attempt $i. Pulling latest changes..."
+              sleep $((i * 2))
+              git pull --rebase origin main
+            done
+            
             echo "✅ Documentation committed and pushed successfully"
           else
             echo "No new README files to commit"
