@@ -455,7 +455,7 @@ jobs:
               echo "Using default commit message"
               git commit -m "📝 Auto-generate documentation [skip ci]"
             fi
-            
+            git pull --rebase origin main
             git push
             echo "✅ Documentation committed and pushed successfully"
           else
