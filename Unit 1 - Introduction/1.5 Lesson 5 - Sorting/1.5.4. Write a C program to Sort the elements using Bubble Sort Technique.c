@@ -29,7 +29,7 @@ void main() {
 		}
 	}
 	printf("After sorting the elements in the array are\n");
-	
+	//fix the readme.md
 	for(int i=0;i<n;i++){
 		printf("Value of a[%d] = %d\n",i,a[i]);
 	}
