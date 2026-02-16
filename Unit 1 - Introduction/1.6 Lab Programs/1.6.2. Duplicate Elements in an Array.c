@@ -8,15 +8,15 @@ int main(){
 	for(int i=0;i<n;i++){
 		scanf("%d",&arr[i]);
 	}
-	int Dup=0;
+	int dup=0;
 	for(int i=0;i<n;i++){
 		for(int j=i+1;j<n;j++){
 			if(arr[i]==arr[j]){
-				Dup=1;
+				dup=1;
 				break;
 			}
 		}
 	}
-	Dup==1?printf("true\n"):printf("false\n");
+	dup==1?printf("true\n"):printf("false\n");
 	return 0;
 }
