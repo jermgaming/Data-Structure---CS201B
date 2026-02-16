@@ -20,19 +20,32 @@ jobs:
         with:
           python-version: '3.10'
       
+      # NEW: Install Ollama
+      - name: Install Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          sleep 5
+          ollama pull llama3.2  # or codellama, mistral, etc.
+      
+      # NEW: Install GCC for compiling C programs
+      - name: Install GCC
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc
+      
       - name: Install dependencies
         run: |
           pip install requests
       
       - name: Generate README files with AI
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           python3 << 'EOF'
           import os
           import json
           import requests
           import subprocess
+          import tempfile
 
           def get_modified_c_files():
               """Get list of modified/added .c files"""
@@ -53,323 +66,224 @@ jobs:
                   print(f"Error reading {filepath}: {e}")
                   return None
 
-          def generate_readme_with_groq(code_content, filename, filepath):
-              """Generate detailed README using Groq API (Free) with full code context"""
-              api_key = os.getenv('GROQ_API_KEY')
-              
-              if not api_key:
-                  print("⚠️  GROQ_API_KEY not found. Using basic template.")
+          def call_ollama(prompt, model='llama3.2'):
+              """Call local Ollama API"""
+              try:
+                  response = requests.post(
+                      'http://localhost:11434/api/generate',
+                      json={
+                          'model': model,
+                          'prompt': prompt,
+                          'stream': False
+                      },
+                      timeout=120
+                  )
+                  
+                  if response.status_code == 200:
+                      return response.json()['response']
+                  else:
+                      print(f"❌ Ollama API error: {response.status_code}")
+                      return None
+              except Exception as e:
+                  print(f"❌ Error calling Ollama: {e}")
                   return None
+
+          def compile_and_run_examples(filepath, filename):
+              """Compile C program and run with example inputs"""
+              examples = []
               
-              # First API call: Analyze the code deeply
-              analysis_prompt = f"""You are analyzing a C program for documentation purposes. Read and understand this code completely.
+              try:
+                  # Compile the program
+                  exe_name = f"/tmp/{filename}"
+                  compile_result = subprocess.run(
+                      ['gcc', filepath, '-o', exe_name],
+                      capture_output=True,
+                      text=True,
+                      timeout=30
+                  )
+                  
+                  if compile_result.returncode != 0:
+                      print(f"⚠️  Compilation failed: {compile_result.stderr}")
+                      return None
+                  
+                  print(f"✅ Compiled {filename}")
+                  
+                  # Generate 2 example inputs using AI
+                  input_prompt = f"""Based on this C program, generate 2 different example inputs that would demonstrate its functionality.
+
+          Program: {filename}
+
+          Provide the inputs in this format:
+          Example 1:
+          [input here]
+
+          Example 2:
+          [input here]
+
+          Keep inputs simple and realistic. If the program doesn't need input, just say "No input needed"."""
+
+                  ai_inputs = call_ollama(input_prompt)
+                  
+                  if not ai_inputs:
+                      # Fallback: try empty input and basic input
+                      test_inputs = ["", "5\n"]
+                  else:
+                      # Parse AI-generated inputs
+                      test_inputs = parse_example_inputs(ai_inputs)
+                  
+                  # Run with each input
+                  for i, test_input in enumerate(test_inputs[:2], 1):
+                      try:
+                          run_result = subprocess.run(
+                              [exe_name],
+                              input=test_input,
+                              capture_output=True,
+                              text=True,
+                              timeout=5
+                          )
+                          
+                          examples.append({
+                              'number': i,
+                              'input': test_input if test_input else '[No input]',
+                              'output': run_result.stdout,
+                              'stderr': run_result.stderr
+                          })
+                          
+                          print(f"✅ Executed example {i}")
+                          
+                      except subprocess.TimeoutExpired:
+                          examples.append({
+                              'number': i,
+                              'input': test_input,
+                              'output': '[Program timeout - might be waiting for input or infinite loop]',
+                              'stderr': ''
+                          })
+                      except Exception as e:
+                          print(f"⚠️  Error running example {i}: {e}")
+                  
+                  return examples
+                  
+              except Exception as e:
+                  print(f"❌ Error in compile_and_run: {e}")
+                  return None
+
+          def parse_example_inputs(ai_response):
+              """Parse AI-generated example inputs"""
+              inputs = []
+              lines = ai_response.split('\n')
+              current_input = []
+              in_example = False
+              
+              for line in lines:
+                  if 'Example' in line and ':' in line:
+                      if current_input:
+                          inputs.append('\n'.join(current_input))
+                          current_input = []
+                      in_example = True
+                  elif in_example and line.strip():
+                      if not line.startswith('Example'):
+                          current_input.append(line)
+              
+              if current_input:
+                  inputs.append('\n'.join(current_input))
+              
+              return inputs if inputs else ["", "5\n"]
+
+          def generate_readme_with_ollama(code_content, filename, filepath, dry_run_examples):
+              """Generate detailed README using Ollama with dry run examples"""
+              
+              # First: Analyze the code
+              analysis_prompt = f"""Analyze this C program in detail:
 
           **File:** {filename}
           **Path:** {filepath}
 
-          **COMPLETE CODE:**
+          **CODE:**
           ```c
           {code_content}
           ```
 
-          Analyze this code in detail and provide:
-          1. What does this program do? (main purpose)
-          2. What data structures are implemented/used?
-          3. List all functions with their purpose, parameters, and return values
-          4. What algorithms are used?
-          5. What are the inputs and outputs?
-          6. Step-by-step walkthrough of the main logic
-          7. Time and space complexity analysis
-          8. Any edge cases or error handling
-          9. Potential issues or limitations
-          10. Example use cases
+          Provide:
+          1. Main purpose
+          2. Data structures used
+          3. Algorithm explanation
+          4. Functions and their purposes
+          5. Input/output requirements
+          6. Time/space complexity
 
-          Be extremely detailed and technical. This analysis will be used to generate documentation."""
+          Be concise but thorough."""
 
-              try:
-                  # Get detailed code analysis
-                  print(f"🔍 Analyzing code context for {filename}...")
-                  analysis_response = requests.post(
-                      'https://api.groq.com/openai/v1/chat/completions',
-                      headers={
-                          'Authorization': f'Bearer {api_key}',
-                          'Content-Type': 'application/json'
-                      },
-                      json={
-                          'model': 'llama-3.3-70b-versatile',
-                          'messages': [
-                              {
-                                  'role': 'system',
-                                  'content': 'You are an expert C programmer and code analyst. Analyze code thoroughly and provide detailed technical insights.'
-                              },
-                              {
-                                  'role': 'user',
-                                  'content': analysis_prompt
-                              }
-                          ],
-                          'temperature': 0.3,  # Lower temperature for accurate analysis
-                          'max_tokens': 4000
-                      },
-                      timeout=45
-                  )
-                  
-                  if analysis_response.status_code != 200:
-                      print(f"❌ Analysis failed: {analysis_response.status_code}")
-                      return None
-                  
-                  code_analysis = analysis_response.json()['choices'][0]['message']['content']
-                  print(f"✅ Code analysis complete")
-                  
-                  # Second API call: Generate README based on analysis
-                  readme_prompt = f"""Based on the following code analysis, create a comprehensive, well-structured README.md file.
+              print(f"🔍 Analyzing {filename} with Ollama...")
+              analysis = call_ollama(analysis_prompt)
+              
+              if not analysis:
+                  return None
+              
+              print(f"✅ Analysis complete")
+              
+              # Prepare dry run examples section
+              examples_section = ""
+              if dry_run_examples:
+                  examples_section = "\n## 🧪 Dry Run Examples\n\n"
+                  for ex in dry_run_examples:
+                      examples_section += f"""### Example {ex['number']}
 
-          **CODE ANALYSIS:**
-          {code_analysis}
-
-          **ORIGINAL CODE FOR REFERENCE:**
-          ```c
-          {code_content}
+          **Input:**
+          ```
+          {ex['input']}
           ```
 
-          Create a detailed README.md with these sections:
+          **Output:**
+          ```
+          {ex['output']}
+          ```
+          """
+                      if ex.get('stderr'):
+                          examples_section += f"""
+          **Errors/Warnings:**
+          ```
+          {ex['stderr']}
+          ```
+          """
+              
+              # Second: Generate README
+              readme_prompt = f"""Create a comprehensive README.md for this C program.
 
+          **ANALYSIS:**
+          {analysis}
+
+          **ORIGINAL CODE:**
+          ```c
+          {code_content[:1000]}...
+          ```
+
+          {examples_section}
+
+          Create a README with these sections:
           # {filename}
 
           ## 📋 Overview
-          [Clear, concise description of what this program does]
-
           ## 🎯 Purpose
-          [Detailed explanation of why this program exists and what problem it solves]
-
           ## ✨ Key Features
-          [Bullet points of main features and capabilities]
-
-          ## 🏗️ Data Structures Used
-          [Detailed explanation of data structures - how they're defined, how they work]
-
+          ## 🏗️ Data Structures
           ## 🔧 Implementation Details
-
-          ### Algorithm Explanation
-          [Step-by-step breakdown of the main algorithm with clear explanations]
-
-          ### Functions Documentation
-          [Document each function:]
-          - **Function Name**: `function_name(parameters)`
-            - **Purpose**: What it does
-            - **Parameters**: Explain each parameter
-            - **Returns**: What it returns
-            - **Logic**: How it works
-
           ## 💻 Compilation & Usage
-
-          ### Compilation
-          ```bash
-          gcc "{filename}.c" -o {filename}
-          ```
-
-          ### Running the Program
-          ```bash
-          ./{filename}
-          ```
-
           ## 📥 Input/Output
-
-          ### Input
-          [Describe what inputs the program expects]
-
-          ### Output
-          [Describe what outputs the program produces]
-
           ## 📊 Complexity Analysis
-          - **Time Complexity**: [Analyze with explanation]
-          - **Space Complexity**: [Analyze with explanation]
-
-          ## 🧪 Example Run
-          ```
-          [Show sample execution with actual expected output]
-          ```
-
-          ## ⚠️ Edge Cases & Error Handling
-          [List edge cases the code handles or should handle]
-
-          ## 🚧 Limitations
-          [Any known limitations or constraints]
-
+          {f"## 🧪 Dry Run Examples\n{examples_section}" if dry_run_examples else ""}
+          ## ⚠️ Edge Cases
           ## 📝 Notes
-          [Any additional important information]
 
-          Use the code analysis to fill in ALL details accurately. Be specific, technical, and educational. Use emojis for section headers. Make it comprehensive and professional."""
+          Make it detailed and educational."""
 
-                  print(f"📝 Generating README documentation...")
-                  readme_response = requests.post(
-                      'https://api.groq.com/openai/v1/chat/completions',
-                      headers={
-                          'Authorization': f'Bearer {api_key}',
-                          'Content-Type': 'application/json'
-                      },
-                      json={
-                          'model': 'llama-3.3-70b-versatile',
-                          'messages': [
-                              {
-                                  'role': 'system',
-                                  'content': 'You are an expert technical writer. Create clear, detailed, and well-structured documentation in Markdown format.'
-                              },
-                              {
-                                  'role': 'user',
-                                  'content': readme_prompt
-                              }
-                          ],
-                          'temperature': 0.7,
-                          'max_tokens': 8000
-                      },
-                      timeout=45
-                  )
-                  
-                  if readme_response.status_code == 200:
-                      print(f"✅ README generated successfully")
-                      return readme_response.json()['choices'][0]['message']['content']
-                  else:
-                      print(f"❌ README generation failed: {readme_response.status_code}")
-                      return None
-                      
-              except Exception as e:
-                  print(f"❌ Error calling Groq API: {e}")
-                  return None
-
-          def create_basic_readme(filename, filepath, code_content):
-              """Fallback basic README template"""
-              return f"""# {filename}
-
-          ## Description
-          This C program is located at `{filepath}`.
-
-          ## Code
-          ```c
-          {code_content[:500]}...
-          ```
-
-          ## Compilation
-          ```bash
-          gcc "{filename}.c" -o {filename}
-          ```
-
-          ## Usage
-          ```bash
-          ./{filename}
-          ```
-
-          ## Notes
-          - Auto-generated README (API key not configured for detailed analysis)
-          - Please add detailed documentation manually
-          """
-
-          def generate_commit_message(files_processed, code_summaries):
-              """Generate context-aware commit message using AI"""
-              api_key = os.getenv('GROQ_API_KEY')
+              print(f"📝 Generating README with Ollama...")
+              readme = call_ollama(readme_prompt)
               
-              if not api_key or not code_summaries:
-                  return "📝 Auto-generate documentation for C programs [skip ci]"
+              if readme:
+                  print(f"✅ README generated")
+                  return readme
               
-              # Create summary of all files processed
-              files_summary = "\n\n".join([
-                  f"**File:** {info['filename']}\n**Path:** {info['filepath']}\n**Summary:** {info['summary']}"
-                  for info in code_summaries
-              ])
-              
-              prompt = f"""Generate a concise, specific Git commit message for auto-generated documentation.
-
-          The following C programs had their documentation generated:
-
-          {files_summary}
-
-          Create a commit message that:
-          1. Starts with an emoji (📝 for docs, 🔗 for linked lists, 🌳 for trees, 📊 for arrays, etc.)
-          2. Briefly describes what documentation was added (be specific about the topic/algorithm)
-          3. Mentions the number of files if more than one
-          4. Ends with [skip ci]
-          5. Keep it under 72 characters if possible
-
-          Examples:
-          - "🔗 Add docs for singly linked list implementation [skip ci]"
-          - "🌳 Document binary search tree operations [skip ci]"
-          - "📊 Add documentation for stack and queue programs [skip ci]"
-
-          Generate ONLY the commit message, nothing else."""
-
-              try:
-                  response = requests.post(
-                      'https://api.groq.com/openai/v1/chat/completions',
-                      headers={
-                          'Authorization': f'Bearer {api_key}',
-                          'Content-Type': 'application/json'
-                      },
-                      json={
-                          'model': 'llama-3.3-70b-versatile',
-                          'messages': [
-                              {
-                                  'role': 'system',
-                                  'content': 'You are a Git commit message expert. Generate clear, concise, specific commit messages.'
-                              },
-                              {
-                                  'role': 'user',
-                                  'content': prompt
-                              }
-                          ],
-                          'temperature': 0.5,
-                          'max_tokens': 100
-                      },
-                      timeout=15
-                  )
-                  
-                  if response.status_code == 200:
-                      commit_msg = response.json()['choices'][0]['message']['content'].strip()
-                      # Ensure [skip ci] is at the end
-                      if '[skip ci]' not in commit_msg:
-                          commit_msg += ' [skip ci]'
-                      print(f"✅ Generated commit message: {commit_msg}")
-                      return commit_msg
-                  else:
-                      print(f"⚠️  Failed to generate commit message, using default")
-                      return "📝 Auto-generate documentation for C programs [skip ci]"
-                      
-              except Exception as e:
-                  print(f"⚠️  Error generating commit message: {e}")
-                  return "📝 Auto-generate documentation for C programs [skip ci]"
-
-          def extract_code_summary(code_content):
-              """Extract a brief summary from code (first comment or main purpose)"""
-              lines = code_content.split('\n')
-              
-              # Try to find initial comments
-              summary_lines = []
-              in_comment = False
-              
-              for line in lines[:30]:  # Check first 30 lines
-                  line = line.strip()
-                  
-                  if line.startswith('/*'):
-                      in_comment = True
-                  
-                  if in_comment:
-                      clean_line = line.replace('/*', '').replace('*/', '').replace('*', '').strip()
-                      if clean_line and not clean_line.startswith('#'):
-                          summary_lines.append(clean_line)
-                  
-                  if '*/' in line:
-                      in_comment = False
-                      if summary_lines:
-                          break
-                  
-                  if line.startswith('//'):
-                      clean_line = line.replace('//', '').strip()
-                      if clean_line:
-                          summary_lines.append(clean_line)
-              
-              if summary_lines:
-                  return ' '.join(summary_lines[:3])  # First 3 lines of comments
-              
-              # Fallback: try to infer from filename or return generic
-              return "C program implementation"
+              return None
 
           def main():
               modified_files = get_modified_c_files()
@@ -377,8 +291,6 @@ jobs:
               if not modified_files:
                   print("No .c files modified")
                   return
-              
-              code_summaries = []
               
               for filepath in modified_files:
                   if not filepath:
@@ -388,50 +300,39 @@ jobs:
                   filename = os.path.splitext(os.path.basename(filepath))[0]
                   readme_path = os.path.join(directory, f"{filename}.md")
                   
-                  # Check if README already exists
                   if os.path.exists(readme_path):
                       print(f"ℹ️  {readme_path} already exists, skipping")
                       continue
                   
                   print(f"📝 Processing: {filepath}")
                   
-                  # Read C file content
+                  # Read C file
                   code_content = read_file_content(filepath)
-                  
                   if not code_content:
-                      print(f"⚠️  Could not read {filepath}")
                       continue
                   
-                  # Extract summary for commit message
-                  code_summary = extract_code_summary(code_content)
-                  code_summaries.append({
-                      'filename': filename,
-                      'filepath': filepath,
-                      'summary': code_summary
-                  })
+                  # Compile and run examples
+                  dry_run_examples = compile_and_run_examples(filepath, filename)
                   
-                  # Generate README with AI
-                  readme_content = generate_readme_with_groq(code_content, filename, filepath)
+                  # Generate README with Ollama
+                  readme_content = generate_readme_with_ollama(
+                      code_content, 
+                      filename, 
+                      filepath,
+                      dry_run_examples
+                  )
                   
-                  # Fallback to basic template if AI fails
                   if not readme_content:
-                      readme_content = create_basic_readme(filename, filepath, code_content)
+                      print(f"⚠️  Failed to generate README for {filename}")
+                      continue
                   
-                  # Write README file
+                  # Write README
                   try:
                       with open(readme_path, 'w', encoding='utf-8') as f:
                           f.write(readme_content)
                       print(f"✅ Created: {readme_path}")
                   except Exception as e:
                       print(f"❌ Error writing {readme_path}: {e}")
-              
-              # Generate smart commit message
-              if code_summaries:
-                  commit_message = generate_commit_message(len(modified_files), code_summaries)
-                  # Write commit message to file for the next step
-                  with open('/tmp/commit_message.txt', 'w') as f:
-                      f.write(commit_message)
-                  print(f"💬 Commit message: {commit_message}")
 
           if __name__ == "__main__":
               main()
@@ -442,22 +343,11 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # Check if there are any changes
           if [ -n "$(git status --porcelain)" ]; then
             git add "**/*.md"
-            
-            # Use AI-generated commit message if available
-            if [ -f /tmp/commit_message.txt ]; then
-              COMMIT_MSG=$(cat /tmp/commit_message.txt)
-              echo "Using AI-generated commit message: $COMMIT_MSG"
-              git commit -m "$COMMIT_MSG"
-            else
-              echo "Using default commit message"
-              git commit -m "📝 Auto-generate documentation [skip ci]"
-            fi
-            
+            git commit -m "📝 Auto-generate documentation with examples [skip ci]"
             git push
-            echo "✅ Documentation committed and pushed successfully"
+            echo "✅ Documentation committed and pushed"
           else
             echo "No new README files to commit"
           fi
