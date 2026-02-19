@@ -21,8 +21,8 @@ int main(){
 		}
 	}
 	arrNext[n-1]=-1;
-	for(int i=0;i<n;i++){
-		printf("%d ",arrNext[i]);
+	for(int j=0;j<n;j++){
+		printf("%d ",arrNext[j]);
 	}
 	return 0;
 }
