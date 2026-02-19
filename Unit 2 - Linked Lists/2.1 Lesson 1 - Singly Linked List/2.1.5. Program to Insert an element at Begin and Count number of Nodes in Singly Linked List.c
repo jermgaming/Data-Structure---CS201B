@@ -34,10 +34,10 @@ int count(NODE first) {
 }
 
 void traverseList(NODE first) {
-	NODE temp = first;
-	while (temp != NULL) {
-		printf("%d --> ",temp -> data);
-		temp = temp -> next;
+	NODE T = first;
+	while (T != NULL) {
+		printf("%d --> ",T -> data);
+		T = T -> next;
 	}
 	printf("NULL\n");
 }
