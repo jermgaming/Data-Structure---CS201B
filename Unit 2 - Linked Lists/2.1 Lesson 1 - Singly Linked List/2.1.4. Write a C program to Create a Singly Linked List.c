@@ -31,10 +31,10 @@ NODE addNodes(NODE first, int x) {
 }
 
 void traverseList(NODE first) {
-	struct node* temp=first;
-	while(temp){
-		printf("%d --> ",temp->data);
-		temp=temp->next;
+	struct node* T=first;
+	while(T){
+		printf("%d --> ",T->data);
+		T=T->next;
 	}
 	printf("NULL\n");
 	
