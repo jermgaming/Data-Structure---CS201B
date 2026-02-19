@@ -28,10 +28,10 @@ NODE insertAtEnd(NODE first, int x) {
 }
 
 void traverseList(NODE first) {
-	struct node* temp=first;
-	while(temp){
-		printf("%d --> ",temp->data);
-		temp=temp->next;
+	NODE T = first;
+	while (T != NULL) {
+		printf("%d --> ",T -> data);
+		T = T -> next;
 	}
 	printf("NULL\n");
 }
