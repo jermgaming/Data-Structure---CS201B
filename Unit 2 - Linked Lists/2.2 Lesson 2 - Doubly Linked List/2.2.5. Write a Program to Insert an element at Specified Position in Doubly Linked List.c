@@ -34,6 +34,11 @@ NODE insertAtPositionInDLL(NODE first, int position, int x) {
 		printf("No such position in DLL so insertion is not possible\n");
 		return first;
 	}
+	if(!temp->next){
+		newNode->prev=temp;
+		temp->next=newNode;
+		return first;
+	}
 	newNode->next=temp->next;
 	newNode->prev=temp;
 	temp->next->prev=newNode;
