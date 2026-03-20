@@ -30,6 +30,16 @@ jobs:
       # 4. Install C++ compiler
       - name: Install g++
         run: sudo apt-get install -y g++
+      
+      - name: Debug - Check secret is set
+        run: |
+          if [ -z "$GROK_API_KEY" ]; then
+            echo "❌ GROK_API_KEY is EMPTY or not set"
+          else
+            echo "✅ GROK_API_KEY is set (length: ${#GROK_API_KEY})"
+          fi
+        env:
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
 
       # 5. Generate tests via Grok & run them
       - name: Generate and Run Tests
