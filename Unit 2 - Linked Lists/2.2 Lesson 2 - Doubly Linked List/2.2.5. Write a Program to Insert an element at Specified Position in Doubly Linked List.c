@@ -53,4 +53,4 @@ void traverseListInDLL(NODE first) {
 		lastNode = lastNode -> next;
 	}
 	printf("NULL\n");
-}
+}`

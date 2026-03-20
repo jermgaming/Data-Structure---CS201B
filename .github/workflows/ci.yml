@@ -1,0 +1,64 @@
+name: CI - Auto Test with Grok
+
+on:
+  push:
+    branches: [ "**" ]       # Run on every branch push
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  generate-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout the code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2        # Need 2 commits to get diff
+
+      # 2. Set up Python (for Grok API script)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 3. Install Python dependencies
+      - name: Install dependencies
+        run: pip install openai
+
+      # 4. Install C++ compiler
+      - name: Install g++
+        run: sudo apt-get install -y g++
+
+      # 5. Generate tests via Grok & run them
+      - name: Generate and Run Tests
+        env:
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+        run: python .github/scripts/generate_and_run_tests.py
+
+      # 6. Upload generated test files as artifacts (optional, for debugging)
+      - name: Upload generated tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-tests
+#           path: generated_test_*.cpp
+# ```
+
+# ---
+
+# ## Step 4: Folder Structure
+
+# Your repo should look like this:
+# ```
+# Data-Structure---CS201B/
+# ├── .github/
+# │   ├── workflows/
+# │   │   └── ci.yml                  ← GitHub Actions config
+# │   └── scripts/
+# │       └── generate_and_run_tests.py  ← Grok test generator
+# ├── LinkedList.cpp
+# ├── Stack.cpp
+# ├── Queue.cpp
+# └── ... (your data structure files)
