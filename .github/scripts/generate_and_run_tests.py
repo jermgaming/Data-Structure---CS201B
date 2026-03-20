@@ -5,7 +5,7 @@ import glob
 from openai import OpenAI
 
 client = OpenAI(
-    api_key=os.environ["GROK_API_KEY"],
+    api_key=os.environ["GROQ_API_KEY"],
     base_url="https://api.x.ai/v1",
 )
 
