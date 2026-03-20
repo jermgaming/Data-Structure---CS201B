@@ -2,9 +2,9 @@ name: CI - Auto Test with Grok
 
 on:
   push:
-    branches: [ "**" ]       # Run on every branch push
+    branches: ["**"]   # Run on every branch push
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
 
 jobs:
   generate-and-test:
@@ -15,13 +15,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2        # Need 2 commits to get diff
+          fetch-depth: 2   # Need 2 commits to get diff
 
-      # 2. Set up Python (for Grok API script)
+      # 2. Set up Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       # 3. Install Python dependencies
       - name: Install dependencies
@@ -29,46 +29,29 @@ jobs:
 
       # 4. Install C++ compiler
       - name: Install g++
-        run: sudo apt-get install -y g++
-      
+        run: sudo apt-get update && sudo apt-get install -y g++
+
+      # 5. Debug - Check if secret is set
       - name: Debug - Check secret is set
+        env:
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
         run: |
           if [ -z "$GROK_API_KEY" ]; then
             echo "❌ GROK_API_KEY is EMPTY or not set"
           else
             echo "✅ GROK_API_KEY is set (length: ${#GROK_API_KEY})"
           fi
-        env:
-          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
 
-      # 5. Generate tests via Grok & run them
+      # 6. Generate tests via Grok & run them
       - name: Generate and Run Tests
         env:
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
         run: python .github/scripts/generate_and_run_tests.py
 
-      # 6. Upload generated test files as artifacts (optional, for debugging)
+      # 7. Upload generated test files (optional)
       - name: Upload generated tests
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: generated-tests
-#           path: generated_test_*.cpp
-# ```
-
-# ---
-
-# ## Step 4: Folder Structure
-
-# Your repo should look like this:
-# ```
-# Data-Structure---CS201B/
-# ├── .github/
-# │   ├── workflows/
-# │   │   └── ci.yml                  ← GitHub Actions config
-# │   └── scripts/
-# │       └── generate_and_run_tests.py  ← Grok test generator
-# ├── LinkedList.cpp
-# ├── Stack.cpp
-# ├── Queue.cpp
-# └── ... (your data structure files)
+          path: generated_test_*.cpp
