@@ -34,7 +34,7 @@ jobs:
       # 5. Debug - Check if secret is set
       - name: Debug - Check secret is set
         env:
-          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          GROK_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           if [ -z "$GROK_API_KEY" ]; then
             echo "❌ GROK_API_KEY is EMPTY or not set"
@@ -45,7 +45,7 @@ jobs:
       # 6. Generate tests via Grok & run them
       - name: Generate and Run Tests
         env:
-          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          GROK_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python .github/scripts/generate_and_run_tests.py
 
       # 7. Upload generated test files (optional)
