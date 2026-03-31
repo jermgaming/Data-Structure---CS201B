@@ -30,7 +30,7 @@ def read_file(path):
         return f.read()
 
 def generate_c_test(source_code, filepath):
-    """Ask Grok to generate a C test file for the given C source"""
+    """Ask Ollama 70B via Groq to generate a C test file for the given C source"""
     filename = os.path.basename(filepath)
 
     prompt = f"""
@@ -136,7 +136,7 @@ def main():
     results = {}
 
     for filepath in changed_files:
-        print(f"\n🤖 Asking Grok to generate tests for: {filepath}")
+        print(f"\n🤖 Asking Ollama 70B via Groq to generate tests for: {filepath}")
         source_code = read_file(filepath)
 
         if len(source_code.strip()) < 20:
@@ -146,7 +146,7 @@ def main():
         try:
             test_code = generate_c_test(source_code, filepath)
         except Exception as e:
-            print(f"❌ Grok API error for {filepath}: {e}")
+            print(f"❌ Ollama 70B via Groq API error for {filepath}: {e}")
             results[filepath] = False
             continue
 
