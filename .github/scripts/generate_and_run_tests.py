@@ -6,7 +6,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key=os.environ["GROQ_API_KEY"],
-    base_url="https://api.x.ai/v1",
+    base_url="https://api.groq.com/openai/v1",
 )
 
 def get_changed_c_files():
@@ -57,7 +57,7 @@ The output must compile cleanly with: gcc -std=c99 -Wall test_file.c -o test_bin
 """
 
     response = client.chat.completions.create(
-        model="grok-3",
+        model="llama2-70b",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=3000,
     )
