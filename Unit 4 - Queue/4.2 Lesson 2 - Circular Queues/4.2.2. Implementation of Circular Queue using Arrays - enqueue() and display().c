@@ -21,4 +21,4 @@ void display() {
 			printf("%d ",queue[i]);
 		} printf("\n");
 	}
-}
+}   
