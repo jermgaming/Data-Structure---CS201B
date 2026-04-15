@@ -8,22 +8,34 @@ on:
 jobs:
   generate-readme:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      
+
       - name: Install dependencies
         run: |
           pip install requests
-      
+
+      - name: Validate API Key exists
+        run: |
+          if [ -z "${{ secrets.GROQ_API_KEY }}" ]; then
+            echo "❌ ERROR: GROQ_API_KEY secret is not set in this repository."
+            echo "👉 Go to: Settings → Secrets and variables → Actions → New repository secret"
+            echo "   Name:  GROQ_API_KEY"
+            echo "   Value: your Groq API key from https://console.groq.com"
+            exit 1
+          else
+            echo "✅ GROQ_API_KEY secret is present."
+          fi
+
       - name: Generate README files with AI
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -35,12 +47,29 @@ jobs:
           import subprocess
 
           def get_modified_c_files():
-              """Get list of modified/added .c files"""
-              result = subprocess.run(
-                  ['git', 'diff', '--name-only', '--diff-filter=AM', 'HEAD^', 'HEAD'],
-                  capture_output=True,
-                  text=True
+              """Get list of modified/added .c files — handles first commit edge case"""
+              # Check if HEAD^ exists (i.e., there is more than one commit)
+              check = subprocess.run(
+                  ['git', 'rev-parse', '--verify', 'HEAD^'],
+                  capture_output=True, text=True
               )
+              if check.returncode == 0:
+                  result = subprocess.run(
+                      ['git', 'diff', '--name-only', '--diff-filter=AM', 'HEAD^', 'HEAD'],
+                      capture_output=True, text=True
+                  )
+              else:
+                  # First commit — list all tracked .c files
+                  result = subprocess.run(
+                      ['git', 'diff', '--name-only', '--diff-filter=AM', '--cached'],
+                      capture_output=True, text=True
+                  )
+                  if not result.stdout.strip():
+                      result = subprocess.run(
+                          ['git', 'show', '--name-only', '--format=', 'HEAD'],
+                          capture_output=True, text=True
+                      )
+
               files = [f for f in result.stdout.strip().split('\n') if f.endswith('.c')]
               return files
 
@@ -54,14 +83,13 @@ jobs:
                   return None
 
           def generate_readme_with_groq(code_content, filename, filepath):
-              """Generate detailed README using Groq API (Free) with full code context"""
+              """Generate detailed README using Groq API with full code context"""
               api_key = os.getenv('GROQ_API_KEY')
-              
+
               if not api_key:
-                  print("⚠️  GROQ_API_KEY not found. Using basic template.")
+                  print("❌ GROQ_API_KEY is not set. Cannot generate AI README.")
                   return None
-              
-              # First API call: Analyze the code deeply
+
               analysis_prompt = f"""You are analyzing a C program for documentation purposes. Read and understand this code completely.
 
           **File:** {filename}
@@ -84,10 +112,9 @@ jobs:
           9. Potential issues or limitations
           10. Example use cases
 
-          Be extremely detailed and technical. This analysis will be used to generate documentation."""
+          Be extremely detailed and technical."""
 
               try:
-                  # Get detailed code analysis
                   print(f"🔍 Analyzing code context for {filename}...")
                   analysis_response = requests.post(
                       'https://api.groq.com/openai/v1/chat/completions',
@@ -107,20 +134,29 @@ jobs:
                                   'content': analysis_prompt
                               }
                           ],
-                          'temperature': 0.3,  # Lower temperature for accurate analysis
+                          'temperature': 0.3,
                           'max_tokens': 4000
                       },
                       timeout=45
                   )
-                  
-                  if analysis_response.status_code != 200:
-                      print(f"❌ Analysis failed: {analysis_response.status_code}")
+
+                  if analysis_response.status_code == 401:
+                      print(f"❌ GROQ_API_KEY is invalid or expired (401 Unauthorized).")
+                      print(f"   Regenerate your key at: https://console.groq.com/keys")
                       return None
-                  
+
+                  if analysis_response.status_code == 429:
+                      print(f"⚠️  Groq rate limit hit (429). Try again later or upgrade plan.")
+                      return None
+
+                  if analysis_response.status_code != 200:
+                      print(f"❌ Analysis API call failed: HTTP {analysis_response.status_code}")
+                      print(f"   Response: {analysis_response.text[:300]}")
+                      return None
+
                   code_analysis = analysis_response.json()['choices'][0]['message']['content']
                   print(f"✅ Code analysis complete")
-                  
-                  # Second API call: Generate README based on analysis
+
                   readme_prompt = f"""Based on the following code analysis, create a comprehensive, well-structured README.md file.
 
           **CODE ANALYSIS:**
@@ -139,26 +175,21 @@ jobs:
           [Clear, concise description of what this program does]
 
           ## 🎯 Purpose
-          [Detailed explanation of why this program exists and what problem it solves]
+          [Why this program exists and what problem it solves]
 
           ## ✨ Key Features
           [Bullet points of main features and capabilities]
 
           ## 🏗️ Data Structures Used
-          [Detailed explanation of data structures - how they're defined, how they work]
+          [Detailed explanation of data structures]
 
           ## 🔧 Implementation Details
 
           ### Algorithm Explanation
-          [Step-by-step breakdown of the main algorithm with clear explanations]
+          [Step-by-step breakdown]
 
           ### Functions Documentation
-          [Document each function:]
-          - **Function Name**: `function_name(parameters)`
-            - **Purpose**: What it does
-            - **Parameters**: Explain each parameter
-            - **Returns**: What it returns
-            - **Logic**: How it works
+          Document each function with purpose, parameters, return values, and logic.
 
           ## 💻 Compilation & Usage
 
@@ -167,38 +198,28 @@ jobs:
           gcc "{filename}.c" -o {filename}
           ```
 
-          ### Running the Program
+          ### Running
           ```bash
           ./{filename}
           ```
 
           ## 📥 Input/Output
-
-          ### Input
-          [Describe what inputs the program expects]
-
-          ### Output
-          [Describe what outputs the program produces]
+          Describe inputs and outputs.
 
           ## 📊 Complexity Analysis
-          - **Time Complexity**: [Analyze with explanation]
-          - **Space Complexity**: [Analyze with explanation]
+          - **Time Complexity**: [with explanation]
+          - **Space Complexity**: [with explanation]
 
           ## 🧪 Example Run
-          ```
-          [Show sample execution with actual expected output]
-          ```
+          Show sample execution with expected output.
 
           ## ⚠️ Edge Cases & Error Handling
-          [List edge cases the code handles or should handle]
 
           ## 🚧 Limitations
-          [Any known limitations or constraints]
 
           ## 📝 Notes
-          [Any additional important information]
 
-          Use the code analysis to fill in ALL details accurately. Be specific, technical, and educational. Use emojis for section headers. Make it comprehensive and professional."""
+          Be specific, technical, and educational. Use emojis for headers."""
 
                   print(f"📝 Generating README documentation...")
                   readme_response = requests.post(
@@ -212,7 +233,7 @@ jobs:
                           'messages': [
                               {
                                   'role': 'system',
-                                  'content': 'You are an expert technical writer. Create clear, detailed, and well-structured documentation in Markdown format.'
+                                  'content': 'You are an expert technical writer. Create clear, detailed, well-structured documentation in Markdown format.'
                               },
                               {
                                   'role': 'user',
@@ -224,14 +245,19 @@ jobs:
                       },
                       timeout=45
                   )
-                  
+
+                  if readme_response.status_code == 401:
+                      print(f"❌ GROQ_API_KEY is invalid or expired (401 Unauthorized).")
+                      return None
+
                   if readme_response.status_code == 200:
                       print(f"✅ README generated successfully")
                       return readme_response.json()['choices'][0]['message']['content']
                   else:
-                      print(f"❌ README generation failed: {readme_response.status_code}")
+                      print(f"❌ README generation failed: HTTP {readme_response.status_code}")
+                      print(f"   Response: {readme_response.text[:300]}")
                       return None
-                      
+
               except Exception as e:
                   print(f"❌ Error calling Groq API: {e}")
                   return None
@@ -266,16 +292,15 @@ jobs:
           def generate_commit_message(files_processed, code_summaries):
               """Generate context-aware commit message using AI"""
               api_key = os.getenv('GROQ_API_KEY')
-              
+
               if not api_key or not code_summaries:
                   return "📝 Auto-generate documentation for C programs [skip ci]"
-              
-              # Create summary of all files processed
+
               files_summary = "\n\n".join([
                   f"**File:** {info['filename']}\n**Path:** {info['filepath']}\n**Summary:** {info['summary']}"
                   for info in code_summaries
               ])
-              
+
               prompt = f"""Generate a concise, specific Git commit message for auto-generated documentation.
 
           The following C programs had their documentation generated:
@@ -283,16 +308,11 @@ jobs:
           {files_summary}
 
           Create a commit message that:
-          1. Starts with an emoji (📝 for docs, 🔗 for linked lists, 🌳 for trees, 📊 for arrays, etc.)
-          2. Briefly describes what documentation was added (be specific about the topic/algorithm)
+          1. Starts with an emoji
+          2. Briefly describes what documentation was added
           3. Mentions the number of files if more than one
           4. Ends with [skip ci]
-          5. Keep it under 72 characters if possible
-
-          Examples:
-          - "🔗 Add docs for singly linked list implementation [skip ci]"
-          - "🌳 Document binary search tree operations [skip ci]"
-          - "📊 Add documentation for stack and queue programs [skip ci]"
+          5. Keep it under 72 characters
 
           Generate ONLY the commit message, nothing else."""
 
@@ -308,7 +328,7 @@ jobs:
                           'messages': [
                               {
                                   'role': 'system',
-                                  'content': 'You are a Git commit message expert. Generate clear, concise, specific commit messages.'
+                                  'content': 'You are a Git commit message expert.'
                               },
                               {
                                   'role': 'user',
@@ -320,115 +340,97 @@ jobs:
                       },
                       timeout=15
                   )
-                  
+
                   if response.status_code == 200:
                       commit_msg = response.json()['choices'][0]['message']['content'].strip()
-                      # Ensure [skip ci] is at the end
                       if '[skip ci]' not in commit_msg:
                           commit_msg += ' [skip ci]'
                       print(f"✅ Generated commit message: {commit_msg}")
                       return commit_msg
                   else:
-                      print(f"⚠️  Failed to generate commit message, using default")
                       return "📝 Auto-generate documentation for C programs [skip ci]"
-                      
+
               except Exception as e:
                   print(f"⚠️  Error generating commit message: {e}")
                   return "📝 Auto-generate documentation for C programs [skip ci]"
 
           def extract_code_summary(code_content):
-              """Extract a brief summary from code (first comment or main purpose)"""
+              """Extract a brief summary from code comments"""
               lines = code_content.split('\n')
-              
-              # Try to find initial comments
               summary_lines = []
               in_comment = False
-              
-              for line in lines[:30]:  # Check first 30 lines
+
+              for line in lines[:30]:
                   line = line.strip()
-                  
                   if line.startswith('/*'):
                       in_comment = True
-                  
                   if in_comment:
                       clean_line = line.replace('/*', '').replace('*/', '').replace('*', '').strip()
                       if clean_line and not clean_line.startswith('#'):
                           summary_lines.append(clean_line)
-                  
                   if '*/' in line:
                       in_comment = False
                       if summary_lines:
                           break
-                  
                   if line.startswith('//'):
                       clean_line = line.replace('//', '').strip()
                       if clean_line:
                           summary_lines.append(clean_line)
-              
+
               if summary_lines:
-                  return ' '.join(summary_lines[:3])  # First 3 lines of comments
-              
-              # Fallback: try to infer from filename or return generic
+                  return ' '.join(summary_lines[:3])
               return "C program implementation"
 
           def main():
               modified_files = get_modified_c_files()
-              
+
               if not modified_files:
                   print("No .c files modified")
                   return
-              
+
               code_summaries = []
-              
+
               for filepath in modified_files:
                   if not filepath:
                       continue
-                      
+
                   directory = os.path.dirname(filepath)
                   filename = os.path.splitext(os.path.basename(filepath))[0]
                   readme_path = os.path.join(directory, f"{filename}.md")
-                  
-                  # Check if README already exists
+
                   if os.path.exists(readme_path):
                       print(f"ℹ️  {readme_path} already exists, skipping")
                       continue
-                  
+
                   print(f"📝 Processing: {filepath}")
-                  
-                  # Read C file content
                   code_content = read_file_content(filepath)
-                  
+
                   if not code_content:
                       print(f"⚠️  Could not read {filepath}")
                       continue
-                  
-                  # Extract summary for commit message
+
                   code_summary = extract_code_summary(code_content)
                   code_summaries.append({
                       'filename': filename,
                       'filepath': filepath,
                       'summary': code_summary
                   })
-                  
-                  # Generate README with AI
+
                   readme_content = generate_readme_with_groq(code_content, filename, filepath)
-                  
-                  # Fallback to basic template if AI fails
+
                   if not readme_content:
+                      print(f"⚠️  Falling back to basic README for {filename}")
                       readme_content = create_basic_readme(filename, filepath, code_content)
-                  
-                  # Write README file
+
                   try:
                       with open(readme_path, 'w', encoding='utf-8') as f:
                           f.write(readme_content)
                       print(f"✅ Created: {readme_path}")
                   except Exception as e:
                       print(f"❌ Error writing {readme_path}: {e}")
-              
-              # Generate smart commit message
+
               if code_summaries:
                   commit_message = generate_commit_message(len(modified_files), code_summaries)
-                  # Write commit message to file for the next step
                   with open('/tmp/commit_message.txt', 'w') as f:
                       f.write(commit_message)
                   print(f"💬 Commit message: {commit_message}")
@@ -436,17 +438,16 @@ jobs:
           if __name__ == "__main__":
               main()
           EOF
-      
+
       - name: Commit and push if changes exist
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          
-          # Check if there are any changes
+
+          # Stage all new/modified .md files correctly (fix for shell glob issue)
+          git add $(find . -name "*.md" -not -path "./.git/*") 2>/dev/null || true
+
           if [ -n "$(git status --porcelain)" ]; then
-            git add "**/*.md"
-            
-            # Use AI-generated commit message if available
             if [ -f /tmp/commit_message.txt ]; then
               COMMIT_MSG=$(cat /tmp/commit_message.txt)
               echo "Using AI-generated commit message: $COMMIT_MSG"
@@ -455,7 +456,7 @@ jobs:
               echo "Using default commit message"
               git commit -m "📝 Auto-generate documentation [skip ci]"
             fi
-            
+
             git push
             echo "✅ Documentation committed and pushed successfully"
           else
