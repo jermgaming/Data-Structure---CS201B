@@ -1,57 +1,57 @@
-name: CI - Auto Test with Ollama 70B
+# name: CI - Auto Test with Ollama 70B
 
-on:
-  push:
-    branches: ["**"]   # Run on every branch push
-  pull_request:
-    branches: [main, master]
+# on:
+#   push:
+#     branches: ["**"]   # Run on every branch push
+#   pull_request:
+#     branches: [main, master]
 
-jobs:
-  generate-and-test:
-    runs-on: ubuntu-latest
+# jobs:
+#   generate-and-test:
+#     runs-on: ubuntu-latest
 
-    steps:
-      # 1. Checkout the code
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2   # Need 2 commits to get diff
+#     steps:
+#       # 1. Checkout the code
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 2   # Need 2 commits to get diff
 
-      # 2. Set up Python
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+#       # 2. Set up Python
+#       - name: Set up Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.11"
 
-      # 3. Install Python dependencies
-      - name: Install dependencies
-        run: pip install openai
+#       # 3. Install Python dependencies
+#       - name: Install dependencies
+#         run: pip install openai
 
-      # 4. Install C++ compiler
-      - name: Install g++
-        run: sudo apt-get update && sudo apt-get install -y g++
+#       # 4. Install C++ compiler
+#       - name: Install g++
+#         run: sudo apt-get update && sudo apt-get install -y g++
 
-      # 5. Debug - Check if secret is set
-      - name: Debug - Check secret is set
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "❌ GROQ_API_KEY is EMPTY or not set"
-          else
-            echo "✅ GROQ_API_KEY is set (length: ${#GROQ_API_KEY})"
-          fi
+#       # 5. Debug - Check if secret is set
+#       - name: Debug - Check secret is set
+#         env:
+#           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+#         run: |
+#           if [ -z "$GROQ_API_KEY" ]; then
+#             echo "❌ GROQ_API_KEY is EMPTY or not set"
+#           else
+#             echo "✅ GROQ_API_KEY is set (length: ${#GROQ_API_KEY})"
+#           fi
 
-      # 6. Generate tests via Ollama 70B via Groq & run them
-      - name: Generate and Run Tests
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: python .github/scripts/generate_and_run_tests.py
+#       # 6. Generate tests via Ollama 70B via Groq & run them
+#       - name: Generate and Run Tests
+#         env:
+#           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+#         run: python .github/scripts/generate_and_run_tests.py
 
-      # 7. Upload generated test files (optional)
-      - name: Upload generated tests
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-tests
-          path: generated_test_*.cpp
+#       # 7. Upload generated test files (optional)
+#       - name: Upload generated tests
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: generated-tests
+#           path: generated_test_*.cpp
