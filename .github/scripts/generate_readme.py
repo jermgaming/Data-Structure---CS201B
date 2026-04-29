@@ -1,8 +1,12 @@
 import os
-import requests
-import json
+from openai import OpenAI
 
 OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
+
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY,
+)
 
 # ── Collect all code files ──────────────────────────────────────────
 EXTENSIONS = {".py", ".cpp", ".c", ".h", ".java", ".js", ".ts", ".cs"}
@@ -25,62 +29,47 @@ if not all_code.strip():
     print("⚠️ No code files found!")
     exit(1)
 
+print(f"📁 Found {len(code_snippets)} code file(s). Sending to AI...")
+
+# ── Trim if too large ───────────────────────────────────────────────
+if len(all_code) > 12000:
+    print("⚠️ Code too large, trimming to 12000 chars...")
+    all_code = all_code[:12000]
+
 # ── Build the prompt ────────────────────────────────────────────────
 prompt = f"""
 You are a technical documentation expert.
 
-Analyze the following source code files from a GitHub repository and generate a comprehensive, well-structured README.md file.
+Analyze the following source code files from a GitHub repository and generate a comprehensive, well-structured README.md.
 
 Include:
 - Project title and description
-- What the project does / its purpose
+- What the project does and its purpose
 - File/folder structure explanation
 - Explanation of each file and key functions/classes
-- How to run or use the code
-- Data structures or algorithms used (if any)
+- How to compile and run the code
+- Data structures or algorithms used
 - Key concepts demonstrated
 
-Here are the source files:
+Source files:
 
 {all_code}
 
-Generate a clean, professional README.md in Markdown format.
+Generate a clean, professional README.md in Markdown format only. No extra commentary.
 """
 
-# ── Call OpenRouter API ─────────────────────────────────────────────
-payload = {
-    "model": "mistralai/mistral-7b-instruct:free",  # use :free tag
-    "messages": [
-        {"role": "user", "content": prompt}
-    ],
-    "max_tokens": 2000,
-}
-
+# ── Call OpenRouter via OpenAI SDK ──────────────────────────────────
 print("📡 Calling OpenRouter API...")
 
-response = requests.post(
-    "https://openrouter.ai/api/v1/chat/completions",
-    headers={
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com",
-        "X-Title": "README Generator",
-    },
-    json=payload,
-    timeout=60,
+response = client.chat.completions.create(
+    model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    messages=[
+        {"role": "user", "content": prompt}
+    ],
+    extra_body={"reasoning": {"enabled": True}}
 )
 
-print(f"Status Code: {response.status_code}")
-
-data = response.json()
-
-# ── Debug: print full response if something goes wrong ──────────────
-if "choices" not in data:
-    print("❌ Unexpected API response:")
-    print(json.dumps(data, indent=2))
-    exit(1)
-
-readme_content = data["choices"][0]["message"]["content"]
+readme_content = response.choices[0].message.content
 
 # ── Write README.md ─────────────────────────────────────────────────
 with open("README.md", "w") as f:
