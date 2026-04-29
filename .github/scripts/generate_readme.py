@@ -21,6 +21,10 @@ for root, dirs, files in os.walk("."):
 
 all_code = "\n\n".join(code_snippets)
 
+if not all_code.strip():
+    print("⚠️ No code files found!")
+    exit(1)
+
 # ── Build the prompt ────────────────────────────────────────────────
 prompt = f"""
 You are a technical documentation expert.
@@ -28,13 +32,13 @@ You are a technical documentation expert.
 Analyze the following source code files from a GitHub repository and generate a comprehensive, well-structured README.md file.
 
 Include:
-- 📌 Project title and description
-- 🧠 What the project does / its purpose
-- 📁 File/folder structure explanation
-- 🔍 Explanation of each file and key functions/classes
-- 🚀 How to run or use the code
-- 📚 Data structures or algorithms used (if any)
-- 💡 Key concepts demonstrated
+- Project title and description
+- What the project does / its purpose
+- File/folder structure explanation
+- Explanation of each file and key functions/classes
+- How to run or use the code
+- Data structures or algorithms used (if any)
+- Key concepts demonstrated
 
 Here are the source files:
 
@@ -44,23 +48,38 @@ Generate a clean, professional README.md in Markdown format.
 """
 
 # ── Call OpenRouter API ─────────────────────────────────────────────
+payload = {
+    "model": "mistralai/mistral-7b-instruct:free",  # use :free tag
+    "messages": [
+        {"role": "user", "content": prompt}
+    ],
+    "max_tokens": 2000,
+}
+
+print("📡 Calling OpenRouter API...")
+
 response = requests.post(
     "https://openrouter.ai/api/v1/chat/completions",
     headers={
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://github.com",
+        "X-Title": "README Generator",
     },
-    json={
-        "model": "baidu/qianfan-ocr-fast:free",  # Free model — change as needed
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 2000,
-    }
+    json=payload,
+    timeout=60,
 )
 
+print(f"Status Code: {response.status_code}")
+
 data = response.json()
+
+# ── Debug: print full response if something goes wrong ──────────────
+if "choices" not in data:
+    print("❌ Unexpected API response:")
+    print(json.dumps(data, indent=2))
+    exit(1)
+
 readme_content = data["choices"][0]["message"]["content"]
 
 # ── Write README.md ─────────────────────────────────────────────────
