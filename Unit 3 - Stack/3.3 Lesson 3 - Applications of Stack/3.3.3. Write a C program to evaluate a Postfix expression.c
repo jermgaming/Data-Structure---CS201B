@@ -44,8 +44,8 @@ void evaluatePostfix(char * e) {
 				printf("Invalid postfix expression.\n");
 				return;
 			}
-			int op2=pop();
-			int op1=pop();
+			
+			
 			temp-=2;
 			if(e[i]=='+'){
 				push(op1+op2);
