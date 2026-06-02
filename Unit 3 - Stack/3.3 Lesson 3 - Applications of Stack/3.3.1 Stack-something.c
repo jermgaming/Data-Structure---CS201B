@@ -68,7 +68,7 @@ int main(void) {
 
 	display(&s);
 	printf("Top element: %d\n", peek(&s));
-	printf("Popped element: %d\n", pop(&s));
+	printf("Popped element:is %d\n", pop(&s));
 	display(&s);
 
 	return 0;
